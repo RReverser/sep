@@ -247,7 +247,6 @@ void freedeblend(deblend_buffers *deblend_buf)
   deblend_buf->ok = NULL;
   free(deblend_buf->objlist);
   deblend_buf->objlist = NULL;
-  return;
 }
 
 /* We don't really care about "true" randomness, so zero seed for the start is fine. */

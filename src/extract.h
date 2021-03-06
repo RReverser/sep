@@ -154,7 +154,7 @@ int  lutz(pliststruct *plistin,
 	  objstruct *objparent, objliststruct *objlist, int minarea,
 	  lutz_buffers *lutz_buf);
 
-void update(infostruct *, infostruct *, pliststruct *);
+void update(infostruct *, infostruct *, const pliststruct *);
 
 typedef struct {
   lutz_buffers  lutz;
@@ -173,8 +173,8 @@ void mergeobjshallow(objstruct *, objstruct *);
 */
 int addobjdeep(int, objliststruct *, objliststruct *);
 
-int convolve(arraybuffer *buf, int y, float *conv, int convw, int convh,
+int convolve(arraybuffer *buf, int y, const float *conv, int convw, int convh,
              PIXTYPE *out);
 int matched_filter(arraybuffer *imbuf, arraybuffer *nbuf, int y,
-                   float *conv, int convw, int convh,
+                   const float *conv, int convw, int convh,
                    PIXTYPE *work, PIXTYPE *out, int noise_type);

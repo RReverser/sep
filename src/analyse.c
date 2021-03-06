@@ -161,8 +161,6 @@ void  preanalyse(int no, objliststruct *objlist)
   obj->xmax = xmax;
   obj->ymin = ymin;
   obj->ymax = ymax;
-
-  return;
 }
 
 /******************************** analyse *********************************/
@@ -326,6 +324,5 @@ void  analyse(int no, objliststruct *objlist, int robust, double gain)
       obj->abcor = 1.0;
     }
 
-  return;
-
+  
 }

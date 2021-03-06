@@ -352,15 +352,13 @@ void  lutzsort(infostruct *info, objliststruct *objlist)
   preanalyse(objlist->nobj, objlist);
 
   objlist->nobj++;
-
-  return;
 }
 
 /********************************* update ************************************/
 /*
 update object's properties each time one of its pixels is scanned by lutz()
 */
-void  update(infostruct *infoptr1, infostruct *infoptr2, pliststruct *pixel)
+void  update(infostruct *infoptr1, infostruct *infoptr2, const pliststruct *pixel)
 {
   infoptr1->pixnb += infoptr2->pixnb;
   infoptr1->flag |= infoptr2->flag;
@@ -375,5 +373,4 @@ void  update(infostruct *infoptr1, infostruct *infoptr2, pliststruct *pixel)
       infoptr1->lastpix = infoptr2->lastpix;
     }
 
-  return;
 }

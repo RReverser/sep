@@ -356,8 +356,7 @@ void backstat(backstruct *backmesh,
 	wbuf += bw;
     }
 
-  return;
-
+  
 }
 
 /******************************** backhisto *********************************/
@@ -421,8 +420,7 @@ void backhisto(backstruct *backmesh,
 		(*(histo+bin))++;
 	    }
     }
-  return;
-}
+  }
 
 /******************************* backguess **********************************/
 /*
@@ -1109,6 +1107,4 @@ void sep_bkg_free(sep_bkg *bkg)
       free(bkg->dsigma);
     }
   free(bkg);
-  
-  return;
 }

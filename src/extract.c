@@ -57,7 +57,7 @@ int sortit(infostruct *info, objliststruct *objlist, int minarea,
      deblend_buffers *deblend_buf);
 void plistinit(int hasconv, int hasvar);
 void clean(objliststruct *objlist, double clean_param, int *survives);
-int convert_to_catalog(objliststruct *objlist, int *survives,
+int convert_to_catalog(objliststruct *objlist, const int *survives,
                        sep_catalog *cat, int w, int include_pixels);
 
 int arraybuffer_init(arraybuffer *buf, void *arr, int dtype, int w, int h,
@@ -126,8 +126,6 @@ void arraybuffer_readline(arraybuffer *buf)
   if (y < buf->dh)
     buf->readline(buf->dptr + buf->elsize * buf->dw * y, buf->dw,
                   buf->lastline);
-
-  return;
 }
 
 void arraybuffer_free(arraybuffer *buf)
@@ -917,8 +915,7 @@ void plistinit(int hasconv, int hasvar)
       plistexist_thresh = 0;
     }
 
-  return;
-
+  
 }
 
 
@@ -1047,7 +1044,7 @@ void free_catalog_fields(sep_catalog *catalog)
  * `cat`:      catalog object to be filled.
  * `w`:        width of image (used to calculate linear indicies).
  */
-int convert_to_catalog(objliststruct *objlist, int *survives,
+int convert_to_catalog(objliststruct *objlist, const int *survives,
                        sep_catalog *cat, int w, int include_pixels)
 {
   int i, j, k;
