@@ -33,7 +33,7 @@
 #endif
 #define	NBRANCH	16    /* starting number per branch */
 
-nsonmax	= 1024;  /* max. number sub-objects per level */
+static _Atomic int nsonmax	= 1024;  /* max. number sub-objects per level */
 
 /* get and set pixstack */
 void sep_set_sub_object_limit(int val)
@@ -51,9 +51,6 @@ int belong(int, objliststruct *, int, objliststruct *);
 int *createsubmap(objliststruct *, int, int *, int *, int *, int *);
 int gatherup(objliststruct *, objliststruct *);
 
-static objliststruct *objlist=NULL;
-static short	     *son=NULL, *ok=NULL;
-
 /******************************** deblend ************************************/
 /*
 Divide a list of isophotal detections in several parts (deblending).
@@ -63,10 +60,11 @@ NOTE: Even if the object is not deblended, the output objlist threshold is
 This can return two error codes: DEBLEND_OVERFLOW or MEMORY_ALLOC_ERROR
 */
 int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
-	    int deblend_nthresh, double deblend_mincont, int minarea)
+	    int deblend_nthresh, double deblend_mincont, int minarea,
+      deblend_buffers *deblend_buf)
 {
   objstruct		*obj;
-  static objliststruct	debobjlist, debobjlist2;
+  objliststruct	debobjlist, debobjlist2;
   double		thresh, thresh0, value0;
   int			h,i,j,k,m,subx,suby,subh,subw,
                         xn,
@@ -79,7 +77,7 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
   xn = deblend_nthresh;
 
   /* reset global static objlist for deblending */
-  memset(objlist, 0, (size_t)xn*sizeof(objliststruct));
+  memset(deblend_buf->objlist, 0, (size_t)xn*sizeof(objliststruct));
 
   /* initialize local object lists */
   debobjlist.obj = debobjlist2.obj =  NULL;
@@ -87,7 +85,7 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
   debobjlist.nobj = debobjlist2.nobj = 0;
   debobjlist.npix = debobjlist2.npix = 0;
 
-  /* Create the submap for the object. 
+  /* Create the submap for the object.
    * The submap is used in lutz(). We create it here because we may call
    * lutz multiple times below, and we only want to create it once.
    */
@@ -103,94 +101,94 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
   objlistout->thresh = debobjlist2.thresh = thresh0;
 
   /* add input object to global deblending objlist and one local objlist */
-  if ((status = addobjdeep(l, objlistin, &objlist[0])) != RETURN_OK)
+  if ((status = addobjdeep(l, objlistin, &deblend_buf->objlist[0])) != RETURN_OK)
     goto exit;
   if ((status = addobjdeep(l, objlistin, &debobjlist2)) != RETURN_OK)
     goto exit;
 
-  value0 = objlist[0].obj[0].fdflux*deblend_mincont;
-  ok[0] = (short)1;
+  value0 = deblend_buf->objlist[0].obj[0].fdflux*deblend_mincont;
+  deblend_buf->ok[0] = (short)1;
   for (k=1; k<xn; k++)
     {
       /*------ Calculate threshold */
       thresh = objlistin->obj[l].fdpeak;
-      debobjlist.thresh = thresh > 0.0? 
+      debobjlist.thresh = thresh > 0.0?
 	thresh0*pow(thresh/thresh0,(double)k/xn) : thresh0;
-      
+
       /*--------- Build tree (bottom->up) */
-      if (objlist[k-1].nobj>=nsonmax)
+      if (deblend_buf->objlist[k-1].nobj>=nsonmax)
 	{
 	  status = DEBLEND_OVERFLOW;
 	  goto exit;
 	}
-      
-      for (i=0; i<objlist[k-1].nobj; i++)
+
+      for (i=0; i<deblend_buf->objlist[k-1].nobj; i++)
 	{
 	  status = lutz(objlistin->plist, submap, subx, suby, subw,
-			&objlist[k-1].obj[i], &debobjlist, minarea);
+			&deblend_buf->objlist[k-1].obj[i], &debobjlist, minarea, &deblend_buf->lutz);
 	  if (status != RETURN_OK)
 	    goto exit;
-	  
+
 	  for (j=h=0; j<debobjlist.nobj; j++)
-	    if (belong(j, &debobjlist, i, &objlist[k-1]))
+	    if (belong(j, &debobjlist, i, &deblend_buf->objlist[k-1]))
 	      {
 		debobjlist.obj[j].thresh = debobjlist.thresh;
-		if ((status = addobjdeep(j, &debobjlist, &objlist[k]))
+		if ((status = addobjdeep(j, &debobjlist, &deblend_buf->objlist[k]))
 		    != RETURN_OK)
 		  goto exit;
-		m = objlist[k].nobj - 1;
+		m = deblend_buf->objlist[k].nobj - 1;
 		if (m>=nsonmax)
 		  {
 		    status = DEBLEND_OVERFLOW;
 		    goto exit;
 		  }
 		if (h>=nbm-1)
-		  if (!(son = (short *)
-			realloc(son,xn*nsonmax*(nbm+=16)*sizeof(short))))
+		  if (!(deblend_buf->son = (short *)
+			realloc(deblend_buf->son,xn*nsonmax*(nbm+=16)*sizeof(short))))
 		    {
 		      status = MEMORY_ALLOC_ERROR;
 		      goto exit;
 		    }
-		son[k-1+xn*(i+nsonmax*(h++))] = (short)m;
-		ok[k+xn*m] = (short)1;
+		deblend_buf->son[k-1+xn*(i+nsonmax*(h++))] = (short)m;
+		deblend_buf->ok[k+xn*m] = (short)1;
 	      }
-	  son[k-1+xn*(i+nsonmax*h)] = (short)-1;
+	  deblend_buf->son[k-1+xn*(i+nsonmax*h)] = (short)-1;
 	}
     }
-  
+
   /*------- cut the right branches (top->down) */
   for (k = xn-2; k>=0; k--)
     {
-      obj = objlist[k+1].obj;
-      for (i=0; i<objlist[k].nobj; i++)
+      obj = deblend_buf->objlist[k+1].obj;
+      for (i=0; i<deblend_buf->objlist[k].nobj; i++)
 	{
-	  for (m=h=0; (j=(int)son[k+xn*(i+nsonmax*h)])!=-1; h++)
+	  for (m=h=0; (j=(int)deblend_buf->son[k+xn*(i+nsonmax*h)])!=-1; h++)
 	    {
 	      if (obj[j].fdflux - obj[j].thresh * obj[j].fdnpix > value0)
 		m++;
-	      ok[k+xn*i] &= ok[k+1+xn*j];
+	      deblend_buf->ok[k+xn*i] &= deblend_buf->ok[k+1+xn*j];
 	    }
-	  if (m>1)	
+	  if (m>1)
 	    {
-	      for (h=0; (j=(int)son[k+xn*(i+nsonmax*h)])!=-1; h++)
-		if (ok[k+1+xn*j] &&
+	      for (h=0; (j=(int)deblend_buf->son[k+xn*(i+nsonmax*h)])!=-1; h++)
+		if (deblend_buf->ok[k+1+xn*j] &&
 		    obj[j].fdflux - obj[j].thresh * obj[j].fdnpix > value0)
 		  {
-		    objlist[k+1].obj[j].flag |= SEP_OBJ_MERGED;
-		    status = addobjdeep(j, &objlist[k+1], &debobjlist2);
+		    deblend_buf->objlist[k+1].obj[j].flag |= SEP_OBJ_MERGED;
+		    status = addobjdeep(j, &deblend_buf->objlist[k+1], &debobjlist2);
 		    if (status != RETURN_OK)
 		      goto exit;
 		  }
-	      ok[k+xn*i] = (short)0;
+	      deblend_buf->ok[k+xn*i] = (short)0;
 	    }
 	}
     }
-  
-  if (ok[0])
+
+  if (deblend_buf->ok[0])
     status = addobjdeep(0, &debobjlist2, objlistout);
   else
     status = gatherup(&debobjlist2, objlistout);
-  
+
  exit:
   if (status == DEBLEND_OVERFLOW)
     put_errdetail("limit of sub-objects reached while deblending. Increase "
@@ -201,16 +199,16 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
   submap = NULL;
   free(debobjlist2.obj);
   free(debobjlist2.plist);
-  
+
   for (k=0; k<xn; k++)
     {
-      free(objlist[k].obj);
-      free(objlist[k].plist);
+      free(deblend_buf->objlist[k].obj);
+      free(deblend_buf->objlist[k].plist);
     }
 
   free(debobjlist.obj);
   free(debobjlist.plist);
-  
+
   return status;
 }
 
@@ -219,16 +217,20 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
 /*
 Allocate the memory allocated by global pointers in refine.c
 */
-int allocdeblend(int deblend_nthresh)
+int allocdeblend(int width, int height, int deblend_nthresh, deblend_buffers *deblend_buf)
 {
   int status=RETURN_OK;
-  QMALLOC(son, short,  deblend_nthresh*nsonmax*NBRANCH, status);
-  QMALLOC(ok, short,  deblend_nthresh*nsonmax, status);
-  QMALLOC(objlist, objliststruct, deblend_nthresh, status);
+  status = lutzalloc(width, height, &deblend_buf->lutz);
+  if (status != RETURN_OK)
+    goto exit;
+
+  QMALLOC(deblend_buf->son, short,  deblend_nthresh*nsonmax*NBRANCH, status);
+  QMALLOC(deblend_buf->ok, short,  deblend_nthresh*nsonmax, status);
+  QMALLOC(deblend_buf->objlist, objliststruct, deblend_nthresh, status);
 
   return status;
  exit:
-  freedeblend();
+  freedeblend(deblend_buf);
   return status;
 }
 
@@ -236,16 +238,20 @@ int allocdeblend(int deblend_nthresh)
 /*
 Free the memory allocated by global pointers in refine.c
 */
-void freedeblend(void)
+void freedeblend(deblend_buffers *deblend_buf)
 {
-  free(son);
-  son = NULL;
-  free(ok);
-  ok = NULL;
-  free(objlist);
-  objlist = NULL;
+  lutzfree(&deblend_buf->lutz);
+  free(deblend_buf->son);
+  deblend_buf->son = NULL;
+  free(deblend_buf->ok);
+  deblend_buf->ok = NULL;
+  free(deblend_buf->objlist);
+  deblend_buf->objlist = NULL;
   return;
 }
+
+/* We don't really care about "true" randomness, so zero seed for the start is fine. */
+static _Thread_local unsigned int rand_seed = 0;
 
 /********************************* gatherup **********************************/
 /*
@@ -286,7 +292,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
       status = MEMORY_ALLOC_ERROR;
       goto exit;
     }
-  
+
   for (objt = objin+(i=1); i<nobj; i++, objt++)
     {
       /*-- Now we have passed the deblending section, reset threshold */
@@ -296,7 +302,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
       for (pixt=pixelin+objin[i].firstpix; pixt>=pixelin;
 	   pixt=pixelin+PLIST(pixt,nextpix))
 	bmp[(PLIST(pixt,x)-xs) + (PLIST(pixt,y)-ys)*bmwidth] = '\1';
-      
+
       status = addobjdeep(i, objlistin, objlistout);
       if (status != RETURN_OK)
 	goto exit;
@@ -318,7 +324,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
       status = MEMORY_ALLOC_ERROR;
       goto exit;
     }
-  
+
   objlistout->plist = pixelout;
   k = objlistout->npix;
   iclst = 0;				/* To avoid gcc -Wall warnings */
@@ -344,10 +350,10 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
 		  distmin = dist;
 		  iclst = i;
 		}
-	    }			
+	    }
 	  if (p[nobj-1] > 1.0e-31)
 	    {
-	      drand = p[nobj-1]*rand()/RAND_MAX;
+	      drand = p[nobj-1]*rand_r(&rand_seed)/(float)RAND_MAX;
 	      for (i=1; i<nobj && p[i]<drand; i++);
 	      if (i==nobj)
 		i=iclst;
@@ -408,7 +414,7 @@ int *createsubmap(objliststruct *objlistin, int no,
 
   obj = objlistin->obj+no;
   pixel = objlistin->plist;
-  
+
   *subx = xmin = obj->xmin;
   *suby = ymin = obj->ymin;
   *subw = w = obj->xmax - xmin + 1;
@@ -420,12 +426,12 @@ int *createsubmap(objliststruct *objlistin, int no,
   pt = pix;
   for (i=n; i--;)
     *(pt++) = -1;
-  
+
   for (i=obj->firstpix; i!=-1; i=PLIST(pixt,nextpix))
     {
       pixt = pixel+i;
       *(pix+(PLIST(pixt,x)-xmin) + (PLIST(pixt,y)-ymin)*w) = i;
     }
-  
+
   return submap;
 }

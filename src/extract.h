@@ -26,8 +26,8 @@
                               /* (MEMORY_OBJSTACK in sextractor inputs) */
 #define CLEAN_MARGIN    0  /* replaces prefs.cleanmargin which was set based */
                            /* on stuff like apertures and vignet size */
-#define	MARGIN_SCALE   2.0 /* Margin / object height */ 
-#define	MARGIN_OFFSET  4.0 /* Margin offset (pixels) */ 
+#define	MARGIN_SCALE   2.0 /* Margin / object height */
+#define	MARGIN_OFFSET  4.0 /* Margin offset (pixels) */
 #define	MAXDEBAREA     3   /* max. area for deblending (must be >= 1)*/
 #define	MAXPICSIZE     1048576 /* max. image size in any dimension */
 
@@ -70,7 +70,7 @@ typedef struct
   PIXTYPE *midline;   /* "middle" line in buffer (at index bh/2) */
   PIXTYPE *lastline;  /* last line in buffer */
   array_converter readline;  /* function to read a data line into buffer */
-  int elsize;         /* size in bytes of one element in original data */ 
+  int elsize;         /* size in bytes of one element in original data */
   int yoff;           /* line index in original data corresponding to bufptr */
 } arraybuffer;
 
@@ -92,7 +92,7 @@ typedef struct
   int	   npix;       			/* "" in measured frame */
   int	   nzdwpix;			/* nb of zero-dweights around */
   int	   nzwpix;		       	/* nb of zero-weights inside */
-  
+
   /* position */
   int	   xpeak, ypeak;                     /* pos of brightest pix */
   int	   xcpeak,ycpeak;                    /* pos of brightest pix */
@@ -131,23 +131,41 @@ typedef struct
   PIXTYPE       thresh;   /* detection threshold */
 } objliststruct;
 
+/*------------------------- Static buffers for lutz() -----------------------*/
+
+typedef struct {
+  infostruct  *info, *store;
+  char        *marker;
+  pixstatus   *psstack;
+  int         *start, *end, *discan;
+  int         xmin, ymin, xmax, ymax;
+  infostruct  curpixinfo;
+} lutz_buffers;
 
 int analysemthresh(int objnb, objliststruct *objlist, int minarea,
 		   PIXTYPE thresh);
 void preanalyse(int, objliststruct *);
 void analyse(int, objliststruct *, int, double);
 
-int  lutzalloc(int, int);
-void lutzfree(void);
+int  lutzalloc(int, int, lutz_buffers *);
+void lutzfree(lutz_buffers *);
 int  lutz(pliststruct *plistin,
 	  int *objrootsubmap, int subx, int suby, int subw,
-	  objstruct *objparent, objliststruct *objlist, int minarea);
+	  objstruct *objparent, objliststruct *objlist, int minarea,
+	  lutz_buffers *lutz_buf);
 
 void update(infostruct *, infostruct *, pliststruct *);
 
-int  allocdeblend(int);
-void freedeblend(void);
-int  deblend(objliststruct *, int, objliststruct *, int, double, int);
+typedef struct {
+  lutz_buffers  lutz;
+  objliststruct *objlist;
+  short	        *son, *ok;
+  unsigned int  rand_seed;
+} deblend_buffers;
+
+int  allocdeblend(int, int, int, deblend_buffers *);
+void freedeblend(deblend_buffers *);
+int  deblend(objliststruct *, int, objliststruct *, int, double, int, deblend_buffers *);
 
 /*int addobjshallow(objstruct *, objliststruct *);
 int rmobjshallow(int, objliststruct *);
