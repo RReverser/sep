@@ -33,9 +33,9 @@
 
 /* plist-related macros */
 #define	PLIST(ptr, elem)	(((pbliststruct *)(ptr))->elem)
-#define	PLISTEXIST(elem)	(plistexist_##elem)
-#define	PLISTPIX(ptr, elem)	(*((PIXTYPE *)((ptr)+plistoff_##elem)))
-#define	PLISTFLAG(ptr, elem)	(*((FLAGTYPE *)((ptr)+plistoff_##elem)))
+#define	PLISTEXIST(elem)	(globalplist->exist_##elem)
+#define	PLISTPIX(ptr, elem)	(*((PIXTYPE *)((ptr)+globalplist->off_##elem)))
+#define	PLISTFLAG(ptr, elem)	(*((FLAGTYPE *)((ptr)+globalplist->off_##elem)))
 
 /* Extraction status */
 typedef	enum {COMPLETE, INCOMPLETE, NONOBJECT, OBJECT} pixstatus;
@@ -48,6 +48,12 @@ typedef struct structinfo
   LONG	lastpix;    /* Pointer to last pixel of pixlist */
   short	flag;	    /* Extraction flag */
 } infostruct;
+
+typedef struct {
+  int exist_cdvalue, exist_thresh, exist_var;
+  int off_value, off_cdvalue, off_thresh, off_var;
+  int size;
+} plistinfo;
 
 typedef	char pliststruct;      /* Dummy type for plist */
 
@@ -73,12 +79,6 @@ typedef struct
   int elsize;         /* size in bytes of one element in original data */
   int yoff;           /* line index in original data corresponding to bufptr */
 } arraybuffer;
-
-
-/* globals */
-extern int plistexist_cdvalue, plistexist_thresh, plistexist_var;
-extern int plistoff_value, plistoff_cdvalue, plistoff_thresh, plistoff_var;
-extern int plistsize;
 
 typedef struct
 {
@@ -142,14 +142,14 @@ typedef struct {
   infostruct  curpixinfo;
 } lutz_buffers;
 
-int analysemthresh(int objnb, objliststruct *objlist, int minarea,
+int analysemthresh(plistinfo *globalplist, int objnb, objliststruct *objlist, int minarea,
 		   PIXTYPE thresh);
-void preanalyse(int, objliststruct *);
-void analyse(int, objliststruct *, int, double);
+void preanalyse(plistinfo *globalplist, int, objliststruct *);
+void analyse(plistinfo *globalplist, int, objliststruct *, int, double);
 
 int  lutzalloc(int, int, lutz_buffers *);
 void lutzfree(lutz_buffers *);
-int  lutz(pliststruct *plistin,
+int  lutz(plistinfo *globalplist, pliststruct *plistin,
 	  int *objrootsubmap, int subx, int suby, int subw,
 	  objstruct *objparent, objliststruct *objlist, int minarea,
 	  lutz_buffers *lutz_buf);
@@ -165,13 +165,13 @@ typedef struct {
 
 int  allocdeblend(int, int, int, deblend_buffers *);
 void freedeblend(deblend_buffers *);
-int  deblend(objliststruct *, int, objliststruct *, int, double, int, deblend_buffers *);
+int  deblend(plistinfo *globalplist, objliststruct *, int, objliststruct *, int, double, int, deblend_buffers *);
 
 /*int addobjshallow(objstruct *, objliststruct *);
 int rmobjshallow(int, objliststruct *);
 void mergeobjshallow(objstruct *, objstruct *);
 */
-int addobjdeep(int, objliststruct *, objliststruct *);
+int addobjdeep(plistinfo *, int, objliststruct *, objliststruct *);
 
 int convolve(arraybuffer *buf, int y, const float *conv, int convw, int convh,
              PIXTYPE *out);

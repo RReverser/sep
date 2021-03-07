@@ -32,7 +32,7 @@
 
 #define	NOBJ 256  /* starting number of obj. */
 
-void lutzsort(infostruct *, objliststruct *);
+void lutzsort(plistinfo *globalplist, infostruct *, objliststruct *);
 
 static const infostruct initinfo = {
 	.firstpix = -1,
@@ -99,7 +99,7 @@ void lutzfree(lutz_buffers *lutz_buf)
 C implementation of R.K LUTZ' algorithm for the extraction of 8-connected pi-
 xels in an image
 */
-int lutz(pliststruct *plistin,
+int lutz(plistinfo *globalplist, pliststruct *plistin,
 	 int *objrootsubmap, int subx, int suby, int subw,
 	 objstruct *objparent, objliststruct *objlist, int minarea,
 	 lutz_buffers *lutz_buf)
@@ -146,7 +146,7 @@ int lutz(pliststruct *plistin,
   /*------Allocate memory for the pixel list */
   free(objlist->plist);
   if (!(objlist->plist
-	= (pliststruct *)malloc((eny-sty)*(enx-stx)*plistsize)))
+	= (pliststruct *)malloc((eny-sty)*(enx-stx)*globalplist->size)))
     {
       out = MEMORY_ALLOC_ERROR;
       plist = NULL;			/* To avoid gcc -Wall warnings */
@@ -187,11 +187,11 @@ int lutz(pliststruct *plistin,
 	    {
 	      if (xl==0 || xl==lutz_buf->xmax)
 		lutz_buf->curpixinfo.flag |= SEP_OBJ_TRUNC;
-	      memcpy(pixel, plistint, (size_t)plistsize);
+	      memcpy(pixel, plistint, (size_t)globalplist->size);
 	      PLIST(pixel, nextpix) = -1;
 	      lutz_buf->curpixinfo.lastpix = lutz_buf->curpixinfo.firstpix = cn;
-	      cn += plistsize;
-	      pixel += plistsize;
+	      cn += globalplist->size;
+	      pixel += globalplist->size;
 
 	      /*----------------- Start Segment -----------------------------*/
 	      if (cs != OBJECT)
@@ -267,7 +267,7 @@ int lutz(pliststruct *plistin,
 				    out = MEMORY_ALLOC_ERROR;
 				    goto exit_lutz;
 				  }
-			      lutzsort(&lutz_buf->info[co], objlist);
+			      lutzsort(globalplist, &lutz_buf->info[co], objlist);
 			    }
 			}
 		      else
@@ -339,7 +339,7 @@ int lutz(pliststruct *plistin,
 /*
 Add an object to the object list based on info (pixel info)
 */
-void  lutzsort(infostruct *info, objliststruct *objlist)
+void  lutzsort(plistinfo *globalplist, infostruct *info, objliststruct *objlist)
 {
   objstruct *obj = objlist->obj+objlist->nobj;
 
@@ -349,7 +349,7 @@ void  lutzsort(infostruct *info, objliststruct *objlist)
   obj->flag = info->flag;
   objlist->npix += info->pixnb;
 
-  preanalyse(objlist->nobj, objlist);
+  preanalyse(globalplist, objlist->nobj, objlist);
 
   objlist->nobj++;
 }

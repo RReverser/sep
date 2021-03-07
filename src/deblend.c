@@ -49,7 +49,7 @@ int sep_get_sub_object_limit()
 
 int belong(int, objliststruct *, int, objliststruct *);
 int *createsubmap(objliststruct *, int, int *, int *, int *, int *);
-int gatherup(objliststruct *, objliststruct *);
+int gatherup(plistinfo *globalplist, objliststruct *, objliststruct *);
 
 /******************************** deblend ************************************/
 /*
@@ -59,7 +59,7 @@ NOTE: Even if the object is not deblended, the output objlist threshold is
 
 This can return two error codes: DEBLEND_OVERFLOW or MEMORY_ALLOC_ERROR
 */
-int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
+int deblend(plistinfo *globalplist, objliststruct *objlistin, int l, objliststruct *objlistout,
 	    int deblend_nthresh, double deblend_mincont, int minarea,
       deblend_buffers *deblend_buf)
 {
@@ -101,9 +101,9 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
   objlistout->thresh = debobjlist2.thresh = thresh0;
 
   /* add input object to global deblending objlist and one local objlist */
-  if ((status = addobjdeep(l, objlistin, &deblend_buf->objlist[0])) != RETURN_OK)
+  if ((status = addobjdeep(globalplist, l, objlistin, &deblend_buf->objlist[0])) != RETURN_OK)
     goto exit;
-  if ((status = addobjdeep(l, objlistin, &debobjlist2)) != RETURN_OK)
+  if ((status = addobjdeep(globalplist, l, objlistin, &debobjlist2)) != RETURN_OK)
     goto exit;
 
   value0 = deblend_buf->objlist[0].obj[0].fdflux*deblend_mincont;
@@ -124,7 +124,7 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
 
       for (i=0; i<deblend_buf->objlist[k-1].nobj; i++)
 	{
-	  status = lutz(objlistin->plist, submap, subx, suby, subw,
+	  status = lutz(globalplist, objlistin->plist, submap, subx, suby, subw,
 			&deblend_buf->objlist[k-1].obj[i], &debobjlist, minarea, &deblend_buf->lutz);
 	  if (status != RETURN_OK)
 	    goto exit;
@@ -133,7 +133,7 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
 	    if (belong(j, &debobjlist, i, &deblend_buf->objlist[k-1]))
 	      {
 		debobjlist.obj[j].thresh = debobjlist.thresh;
-		if ((status = addobjdeep(j, &debobjlist, &deblend_buf->objlist[k]))
+		if ((status = addobjdeep(globalplist, j, &debobjlist, &deblend_buf->objlist[k]))
 		    != RETURN_OK)
 		  goto exit;
 		m = deblend_buf->objlist[k].nobj - 1;
@@ -175,7 +175,7 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
 		    obj[j].fdflux - obj[j].thresh * obj[j].fdnpix > value0)
 		  {
 		    deblend_buf->objlist[k+1].obj[j].flag |= SEP_OBJ_MERGED;
-		    status = addobjdeep(j, &deblend_buf->objlist[k+1], &debobjlist2);
+		    status = addobjdeep(globalplist, j, &deblend_buf->objlist[k+1], &debobjlist2);
 		    if (status != RETURN_OK)
 		      goto exit;
 		  }
@@ -185,9 +185,9 @@ int deblend(objliststruct *objlistin, int l, objliststruct *objlistout,
     }
 
   if (deblend_buf->ok[0])
-    status = addobjdeep(0, &debobjlist2, objlistout);
+    status = addobjdeep(globalplist, 0, &debobjlist2, objlistout);
   else
-    status = gatherup(&debobjlist2, objlistout);
+    status = gatherup(globalplist, &debobjlist2, objlistout);
 
  exit:
   if (status == DEBLEND_OVERFLOW)
@@ -257,7 +257,7 @@ static _Thread_local unsigned int rand_seed = 0;
 Collect faint remaining pixels and allocate them to their most probable
 progenitor.
 */
-int gatherup(objliststruct *objlistin, objliststruct *objlistout)
+int gatherup(plistinfo *globalplist, objliststruct *objlistin, objliststruct *objlistout)
 {
   char        *bmp;
   float       *amp, *p, dx,dy, drand, dist, distmin;
@@ -280,7 +280,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
   QMALLOC(n, int, nobj, status);
 
   for (i=1; i<nobj; i++)
-    analyse(i, objlistin, 0, 0.0);
+    analyse(globalplist, i, objlistin, 0, 0.0);
 
   p[0] = 0.0;
   bmwidth = objin->xmax - (xs=objin->xmin) + 1;
@@ -302,7 +302,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
 	   pixt=pixelin+PLIST(pixt,nextpix))
 	bmp[(PLIST(pixt,x)-xs) + (PLIST(pixt,y)-ys)*bmwidth] = '\1';
 
-      status = addobjdeep(i, objlistin, objlistout);
+      status = addobjdeep(globalplist, i, objlistin, objlistout);
       if (status != RETURN_OK)
 	goto exit;
       n[i] = objlistout->nobj - 1;
@@ -318,7 +318,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
   objout = objlistout->obj;		/* DO NOT MOVE !!! */
 
   if (!(pixelout=(pliststruct *)realloc(objlistout->plist,
-					(objlistout->npix + npix)*plistsize)))
+					(objlistout->npix + npix)*globalplist->size)))
     {
       status = MEMORY_ALLOC_ERROR;
       goto exit;
@@ -334,8 +334,8 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
       y = PLIST(pixt,y);
       if (!bmp[(x-xs) + (y-ys)*bmwidth])
 	{
-	  pixt2 = pixelout + (l=(k++*plistsize));
-	  memcpy(pixt2, pixt, (size_t)plistsize);
+	  pixt2 = pixelout + (l=(k++*globalplist->size));
+	  memcpy(pixt2, pixt, (size_t)globalplist->size);
 	  PLIST(pixt2, nextpix) = -1;
 	  distmin = 1e+31;
 	  for (objt = objin+(i=1); i<nobj; i++, objt++)
@@ -365,7 +365,7 @@ int gatherup(objliststruct *objlistin, objliststruct *objlistout)
 
   objlistout->npix = k;
   if (!(objlistout->plist = (pliststruct *)realloc(pixelout,
-						   objlistout->npix*plistsize)))
+						   objlistout->npix*globalplist->size)))
     status = MEMORY_ALLOC_ERROR;
 
  exit:

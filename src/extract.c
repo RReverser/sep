@@ -34,11 +34,7 @@
 #define	WTHRESH_CONVFAC	1e-4         /* Factor to apply to weights when */
 			             /* thresholding filtered weight-maps */
 
-/* globals */
-int plistexist_cdvalue, plistexist_thresh, plistexist_var;
-int plistoff_value, plistoff_cdvalue, plistoff_thresh, plistoff_var;
-int plistsize;
-size_t extract_pixstack = 300000;
+static _Atomic size_t extract_pixstack = 300000;
 
 /* get and set pixstack */
 void sep_set_extract_pixstack(size_t val)
@@ -51,11 +47,11 @@ size_t sep_get_extract_pixstack()
   return extract_pixstack;
 }
 
-int sortit(infostruct *info, objliststruct *objlist, int minarea,
+int sortit(plistinfo *globalplist, infostruct *info, objliststruct *objlist, int minarea,
 	   objliststruct *finalobjlist,
 	   int deblend_nthresh, double deblend_mincont, double gain,
      deblend_buffers *deblend_buf);
-void plistinit(int hasconv, int hasvar);
+void plistinit(plistinfo *globalplist, int hasconv, int hasvar);
 void clean(objliststruct *objlist, double clean_param, int *survives);
 int convert_to_catalog(objliststruct *objlist, const int *survives,
                        sep_catalog *cat, int w, int include_pixels);
@@ -202,6 +198,8 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
   char              errtext[512];
   sep_catalog       *cat;
   deblend_buffers   deblend_buf;
+  plistinfo         globalplistbuf;
+  plistinfo         *globalplist;
 
   status = RETURN_OK;
   pixel = NULL;
@@ -226,6 +224,8 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
   pixsig = 0.0;
   isvarnoise = 0;
   memset(&deblend_buf, 0, sizeof(deblend_buffers));
+  globalplist = &globalplistbuf;
+  memset(globalplist, 0, sizeof(plistinfo));
 
   mem_pixstack = sep_get_extract_pixstack();
 
@@ -338,8 +338,8 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
 
 
   /* Allocate memory for the pixel list */
-  plistinit((conv != NULL), (image->noise_type != SEP_NOISE_NONE));
-  if (!(pixel = objlist.plist = malloc(nposize=mem_pixstack*plistsize)))
+  plistinit(globalplist, (conv != NULL), (image->noise_type != SEP_NOISE_NONE));
+  if (!(pixel = objlist.plist = malloc(nposize=mem_pixstack*globalplistbuf.size)))
     {
       status = MEMORY_ALLOC_ERROR;
       goto exit;
@@ -347,9 +347,9 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
 
   /*----- at the beginning, "free" object fills the whole pixel list */
   freeinfo.firstpix = 0;
-  freeinfo.lastpix = nposize-plistsize;
+  freeinfo.lastpix = nposize-globalplistbuf.size;
   pixt = pixel;
-  for (i=plistsize; i<nposize; i += plistsize, pixt += plistsize)
+  for (i=globalplistbuf.size; i<nposize; i += globalplistbuf.size, pixt += globalplistbuf.size)
     PLIST(pixt, nextpix) = i;
   PLIST(pixt, nextpix) = -1;
 
@@ -527,7 +527,7 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
 		  /* increase the stack size */
 		  oldnposize = nposize;
  		  mem_pixstack = (int)(mem_pixstack * 2);
-		  nposize = mem_pixstack * plistsize;
+		  nposize = mem_pixstack * globalplistbuf.size;
 		  pixel = (pliststruct *)realloc(pixel, nposize);
 		  objlist.plist = pixel;
 		  if (!pixel)
@@ -540,13 +540,13 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
 		   * and link up all the pixels in the new block */
 		  PLIST(pixel+freeinfo.firstpix, nextpix) = oldnposize;
 		  pixt = pixel + oldnposize;
-		  for (i=oldnposize + plistsize; i<nposize;
-		       i += plistsize, pixt += plistsize)
+		  for (i=oldnposize + globalplistbuf.size; i<nposize;
+		       i += globalplistbuf.size, pixt += globalplistbuf.size)
 		    PLIST(pixt, nextpix) = i;
 		  PLIST(pixt, nextpix) = -1;
 
 		  /* last free pixel is now at the end of the new block */
-		  freeinfo.lastpix = nposize - plistsize;
+		  freeinfo.lastpix = nposize - globalplistbuf.size;
 		}
 	      /*------------------------------------------------------------*/
 
@@ -627,7 +627,7 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
 			      /* update threshold before object is processed */
 			      objlist.thresh = thresh;
 
-			      status = sortit(&info[co], &objlist, minarea,
+			      status = sortit(globalplist, &info[co], &objlist, minarea,
 					      finalobjlist,
 					      deblend_nthresh,deblend_cont,
                                               image->gain,
@@ -686,7 +686,7 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
       /* Calculate mthresh for all objects in the list (needed for cleaning) */
       for (i=0; i<finalobjlist->nobj; i++)
 	{
-	  status = analysemthresh(i, finalobjlist, minarea, thresh);
+	  status = analysemthresh(globalplist, i, finalobjlist, minarea, thresh);
 	  if (status != RETURN_OK)
 	    goto exit;
 	}
@@ -747,7 +747,7 @@ int sep_extract(sep_image *image, float thresh, int thresh_type,
 /*
 build the object structure.
 */
-int sortit(infostruct *info, objliststruct *objlist, int minarea,
+int sortit(plistinfo *globalplist, infostruct *info, objliststruct *objlist, int minarea,
 	   objliststruct *finalobjlist,
 	   int deblend_nthresh, double deblend_mincont, double gain,
      deblend_buffers *deblend_buf)
@@ -772,9 +772,9 @@ int sortit(infostruct *info, objliststruct *objlist, int minarea,
   obj.flag = info->flag;
   obj.thresh = objlist->thresh;
 
-  preanalyse(0, objlist);
+  preanalyse(globalplist, 0, objlist);
 
-  status = deblend(objlist, 0, &objlistout, deblend_nthresh, deblend_mincont,
+  status = deblend(globalplist, objlist, 0, &objlistout, deblend_nthresh, deblend_mincont,
 		   minarea, deblend_buf);
   if (status)
     {
@@ -793,14 +793,14 @@ int sortit(infostruct *info, objliststruct *objlist, int minarea,
   /* Analyze the deblended objects and add to the final list */
   for (i=0; i<objlist2->nobj; i++)
     {
-      analyse(i, objlist2, 1, gain);
+      analyse(globalplist, i, objlist2, 1, gain);
 
       /* this does nothing if DETECT_MAXAREA is 0 (and it currently is) */
       if (DETECT_MAXAREA && objlist2->obj[i].fdnpix > DETECT_MAXAREA)
 	continue;
 
       /* add the object to the final list */
-      status = addobjdeep(i, objlist2, finalobjlist);
+      status = addobjdeep(globalplist, i, objlist2, finalobjlist);
       if (status != RETURN_OK)
 	goto exit;
     }
@@ -818,14 +818,14 @@ Add object number `objnb` from list `objl1` to list `objl2`.
 Unlike `addobjshallow` this also copies plist pixels to the second list.
 */
 
-int addobjdeep(int objnb, objliststruct *objl1, objliststruct *objl2)
+int addobjdeep(plistinfo *globalplist, int objnb, objliststruct *objl1, objliststruct *objl2)
 {
   objstruct	*objl2obj;
   pliststruct	*plist1 = objl1->plist, *plist2 = objl2->plist;
   int		fp, i, j, npx, objnb2;
 
   fp = objl2->npix;      /* 2nd list's plist size in pixels */
-  j = fp*plistsize;      /* 2nd list's plist size in bytes */
+  j = fp*globalplist->size;      /* 2nd list's plist size in bytes */
   objnb2 = objl2->nobj;  /* # of objects currently in 2nd list*/
 
   /* Allocate space in `objl2` for the new object */
@@ -842,9 +842,9 @@ int addobjdeep(int objnb, objliststruct *objl1, objliststruct *objl2)
   /* Allocate space for the new object's pixels in 2nd list's plist */
   npx = objl1->obj[objnb].fdnpix;
   if (fp)
-    plist2 = (pliststruct *)realloc(plist2, (objl2->npix+=npx)*plistsize);
+    plist2 = (pliststruct *)realloc(plist2, (objl2->npix+=npx)*globalplist->size);
   else
-    plist2 = (pliststruct *)malloc((objl2->npix=npx)*plistsize);
+    plist2 = (pliststruct *)malloc((objl2->npix=npx)*globalplist->size);
 
   if (!plist2)
     goto earlyexit;
@@ -854,16 +854,16 @@ int addobjdeep(int objnb, objliststruct *objl1, objliststruct *objl2)
   plist2 += j;
   for(i=objl1->obj[objnb].firstpix; i!=-1; i=PLIST(plist1+i,nextpix))
     {
-      memcpy(plist2, plist1+i, (size_t)plistsize);
-      PLIST(plist2,nextpix) = (j+=plistsize);
-      plist2 += plistsize;
+      memcpy(plist2, plist1+i, (size_t)globalplist->size);
+      PLIST(plist2,nextpix) = (j+=globalplist->size);
+      plist2 += globalplist->size;
     }
-  PLIST(plist2-=plistsize, nextpix) = -1;
+  PLIST(plist2-=globalplist->size, nextpix) = -1;
 
   /* copy the object itself */
   objl2->obj[objnb2] = objl1->obj[objnb];
-  objl2->obj[objnb2].firstpix = fp*plistsize;
-  objl2->obj[objnb2].lastpix = j-plistsize;
+  objl2->obj[objnb2].firstpix = fp*globalplist->size;
+  objl2->obj[objnb2].lastpix = j-globalplist->size;
 
   return RETURN_OK;
 
@@ -880,42 +880,42 @@ int addobjdeep(int objnb, objliststruct *objl1, objliststruct *objl2)
  * (originally init_plist() in sextractor)
 PURPOSE	initialize a pixel-list and its components.
  ***/
-void plistinit(int hasconv, int hasvar)
+void plistinit(plistinfo *globalplist, int hasconv, int hasvar)
 {
   pbliststruct	*pbdum = NULL;
 
-  plistsize = sizeof(pbliststruct);
-  plistoff_value = (char *)&pbdum->value - (char *)pbdum;
+  globalplist->size = sizeof(pbliststruct);
+  globalplist->off_value = (char *)&pbdum->value - (char *)pbdum;
 
   if (hasconv)
     {
-      plistexist_cdvalue = 1;
-      plistoff_cdvalue = plistsize;
-      plistsize += sizeof(PIXTYPE);
+      globalplist->exist_cdvalue = 1;
+      globalplist->off_cdvalue = globalplist->size;
+      globalplist->size += sizeof(PIXTYPE);
     }
   else
     {
-      plistexist_cdvalue = 0;
-      plistoff_cdvalue = plistoff_value;
+      globalplist->exist_cdvalue = 0;
+      globalplist->off_cdvalue = globalplist->off_value;
     }
 
   if (hasvar)
     {
-      plistexist_var = 1;
-      plistoff_var = plistsize;
-      plistsize += sizeof(PIXTYPE);
+      globalplist->exist_var = 1;
+      globalplist->off_var = globalplist->size;
+      globalplist->size += sizeof(PIXTYPE);
 
-      plistexist_thresh = 1;
-      plistoff_thresh = plistsize;
-      plistsize += sizeof(PIXTYPE);
+      globalplist->exist_thresh = 1;
+      globalplist->off_thresh = globalplist->size;
+      globalplist->size += sizeof(PIXTYPE);
     }
   else
     {
-      plistexist_var = 0;
-      plistexist_thresh = 0;
+      globalplist->exist_var = 0;
+      globalplist->exist_thresh = 0;
     }
 
-  
+
 }
 
 
