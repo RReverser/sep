@@ -324,7 +324,7 @@ int sep_sum_circann_multi(sep_image *im,
  */
 int sep_flux_radius(sep_image *im,
 		    double x, double y, double rmax, int id, int subpix, short inflag,
-		    double *fluxtot, double *fluxfrac, int n,
+		    const double *fluxtot, const double *fluxfrac, int n,
 		    double *r, short *flag);
 
 /* sep_kron_radius()
